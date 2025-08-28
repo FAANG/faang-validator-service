@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="/static/style.css" rel="stylesheet" />
+  </head>
+  <body>
+
+    <p class="controls">
+      <input id="file" type="file" />
+      <button id="send" disabled>Send</button>
+      <span id="status"></span>
+    </p>
+
+    <div id="log" aria-live="polite"></div>
+
+    <script>
+      const log = document.getElementById("log");
+      const sendBtn = document.getElementById("send");
+      const statusEl = document.getElementById("status");
+
+      function add(text, mine=false) {
+        const d = document.createElement("div");
+        d.className = "b" + (mine ? " me" : "");
+        d.textContent = text;
+        log.appendChild(d);
+        log.scrollTop = log.scrollHeight;
+      }
+
+      const wsScheme = location.protocol === "https:" ? "wss" : "ws";
+      const ws = new WebSocket(`${wsScheme}://${location.host}/ws`);
+      ws.onopen   = () => { add("WS connected"); sendBtn.disabled = false; };
+      ws.onmessage= (e) => add(e.data);
+      ws.onclose  = () => { add("WS disconnected"); sendBtn.disabled = true; };
+
+      sendBtn.onclick = async () => {
+        const f = document.getElementById("file").files[0];
+        if (!f) { add("Pick a file first"); return; }
+        const fd = new FormData();
+        fd.append("file", f, f.name);
+        add("You: uploaded " + f.name, true);
+        try {
+          statusEl.textContent = "Uploading…";
+          const r = await fetch("/upload", { method: "POST", body: fd });
+          statusEl.textContent = "";
+          add("HTTP /upload → " + r.status);
+        } catch (err) {
+          statusEl.textContent = "";
+          add("HTTP error: " + err);
+        }
+      };
+    </script>
+  </body>
+</html>

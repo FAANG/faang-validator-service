@@ -1,0 +1,11 @@
+:root { --border:#ddd; --bubble:#eef; --mine:#cfe9cf; }
+* { box-sizing: border-box; }
+body { font: 14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 20px; background: #fff; color: #111; }
+h3 { margin-top: 0; }
+.controls { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
+#status { color: #666; font-size: 12px; }
+button[disabled] { opacity: .6; cursor: not-allowed; }
+
+#log { height: 320px; overflow: auto; border: 1px solid var(--border); padding: 8px; border-radius: 8px; background: #fff; }
+.b { background: var(--bubble); padding: 6px 8px; border-radius: 8px; margin: 6px 0; max-width: 70%; }
+.me { background: var(--mine); margin-left: auto; }

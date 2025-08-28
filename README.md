@@ -38,3 +38,9 @@ The application is organized as follows:
 ## Dependencies
 
 - Setuptools is pinned to a version less than 81 to avoid issues with the deprecated pkg_resources package, which is scheduled for removal in November 2025.
+
+# faang-validator-service
+
+python3 -m pip install -r requirements.txt
+
+uvicorn websocket_client:app --host 127.0.0.1 --port 8000
