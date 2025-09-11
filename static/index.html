@@ -8,7 +8,7 @@
   <body>
 
     <p class="controls">
-      <input id="file" type="file" />
+      <input id="text" type="search" placeholder="Input text" />
       <button id="send" disabled>Send</button>
       <span id="status"></span>
     </p>
@@ -19,6 +19,7 @@
       const log = document.getElementById("log");
       const sendBtn = document.getElementById("send");
       const statusEl = document.getElementById("status");
+      const textInput = document.getElementById("text");
 
       function add(text, mine=false) {
         const d = document.createElement("div");
@@ -34,17 +35,30 @@
       ws.onmessage= (e) => add(e.data);
       ws.onclose  = () => { add("WS disconnected"); sendBtn.disabled = true; };
 
+      textInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") sendBtn.click();
+      });
+
       sendBtn.onclick = async () => {
-        const f = document.getElementById("file").files[0];
-        if (!f) { add("Pick a file first"); return; }
-        const fd = new FormData();
-        fd.append("file", f, f.name);
-        add("You: uploaded " + f.name, true);
+        const text = textInput.value.trim();
+        if (!text) { add("Input text"); return; }
+
+        const body = new URLSearchParams({
+          text,
+          filename: "manual_input.txt"
+        });
+
+        add("You: " + (text.length > 60 ? text.slice(0,60)+"…" : text), true);
         try {
-          statusEl.textContent = "Uploading…";
-          const r = await fetch("/upload", { method: "POST", body: fd });
+          statusEl.textContent = "Sending…";
+          const r = await fetch("/upload", {
+            method: "POST",
+            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+            body
+          });
           statusEl.textContent = "";
           add("HTTP /upload → " + r.status);
+          if (r.ok) textInput.value = "";
         } catch (err) {
           statusEl.textContent = "";
           add("HTTP error: " + err);
