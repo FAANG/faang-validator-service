@@ -44,3 +44,11 @@ The application is organized as follows:
 python3 -m pip install -r requirements.txt
 
 uvicorn websocket_client:app --host 127.0.0.1 --port 8000
+
+---
+
+docker run --rm -p 6379:6379 redis:7
+
+celery -A celery_app.celery_app worker -l info
+
+uvicorn websocket_app:app --reload
