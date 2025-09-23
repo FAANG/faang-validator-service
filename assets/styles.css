@@ -1,0 +1,35 @@
+/* Custom styles for the FAANG Metadata Validator */
+
+/* Validate button hover effect */
+.validate-button:hover {
+    background-color: #45a049 !important; /* Darker green on hover */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2) !important; /* Add shadow on hover */
+}
+
+/* Additional styling for the loading spinners */
+._dash-loading {
+    margin-top: 20px;
+}
+
+/* Improve overall app appearance */
+body {
+    font-family: 'Arial', sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+/* Tab styling */
+.dash-tab {
+    padding: 10px 15px;
+}
+
+.dash-tab--selected {
+    border-top: 2px solid #4CAF50;
+    font-weight: bold;
+}
+
+/* Upload area hover effect */
+.upload-area:hover {
+    border-color: #4CAF50;
+    background-color: #f8f8f8;
+}
