@@ -11,12 +11,10 @@ This application provides validation services for FAANG organism metadata.
 
 ## Usage
 
-The application provides two ways to validate metadata:
+The application provides a way to validate metadata:
 
-1. **File Upload**: Upload a CSV or Excel file containing organism metadata
-2. **Google Sheet**: Provide a Google Sheet URL and worksheet number to validate
-
-For Google Sheet validation, the application can access public Google Sheets without requiring authentication.
+1. **File Upload**: Click the "Choose File" button to select a CSV or Excel file containing organism metadata
+2. **Validation**: After selecting a file, click the "Validate" button to validate the metadata
 
 ## Environment Variables
 
@@ -26,3 +24,17 @@ For Google Sheet validation, the application can access public Google Sheets wit
 ## Development
 
 To modify the validation rules, check the `rulesets_pydantics` directory.
+
+## Code Structure
+
+The application is organized as follows:
+
+- `dash_app.py`: Main application file containing the Dash app and UI components
+- `src/file_processor.py`: Module for file reading and processing functionality
+- `src/organism_validation.py`: Module for validating organism metadata
+- `src/google_sheet_processor.py`: Module for processing Google Sheets data
+- `rulesets_pydantics/`: Directory containing Pydantic models for validation rules
+
+## Dependencies
+
+- Setuptools is pinned to a version less than 81 to avoid issues with the deprecated pkg_resources package, which is scheduled for removal in November 2025.

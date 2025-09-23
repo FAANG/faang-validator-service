@@ -10,3 +10,4 @@ google-auth
 google-auth-oauthlib
 pydantic==2.11.7
 openpyxl
+setuptools<81

@@ -38,14 +38,20 @@ def process_headers(headers: List[str]) -> List[str]:
 
 
 class GoogleSheetProcessor:
-    def __init__(self, spreadsheet_id: str):
+    def __init__(self, spreadsheet_id: str, project: Optional[str] = None):
         self.spreadsheet_id = spreadsheet_id
+        self.project = project
 
     def process_spreadsheet(self, number) -> list[dict[str, Any]]:
         """Main method to process the spreadsheet and return JSON data."""
         try:
-            # Create a client that can access public sheets without authentication
-            client = gspread.service_account(None)
+            # Create a client with optional project name for authentication
+            if self.project:
+                # Use the specified project for authentication
+                client = gspread.service_account(None, project=self.project)
+            else:
+                # Use default authentication (for backward compatibility)
+                client = gspread.service_account(None)
 
             # Open spreadsheet and get worksheet by index
             spreadsheet = client.open_by_key(self.spreadsheet_id)
@@ -120,5 +126,3 @@ def build_json_data(headers: List[str], rows: List[List[str]]) -> List[Dict[str,
         grouped_data.append(record)
 
     return grouped_data
-
-

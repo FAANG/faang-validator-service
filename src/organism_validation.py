@@ -205,6 +205,74 @@ def export_organism_to_biosample_format(model: FAANGOrganismSample) -> Dict[str,
     return biosample_data
 
 
+def get_field_to_column_mapping():
+    """
+    Create a mapping from field names in the validation model to column names in the uploaded file.
+    """
+    mapping = {}
+    for field_name, field_info in FAANGOrganismSample.model_fields.items():
+        if field_info.alias:
+            mapping[field_name] = field_info.alias
+
+    # Add special handling for nested fields
+    mapping['health_status.text'] = 'Health Status'
+    mapping['health_status.term'] = 'Health Status Term Source ID'
+
+    return mapping
+
+
+def process_validation_errors(invalid_organisms, sheet_name):
+    """
+    Process validation errors and create a structured format for display.
+
+    Args:
+        invalid_organisms (list): List of invalid organisms with their errors
+        sheet_name (str): Name of the sheet from which data was extracted
+
+    Returns:
+        list: List of dictionaries containing error information
+    """
+    error_data = []
+    field_to_column = get_field_to_column_mapping()
+
+    for org in invalid_organisms:
+        sample_name = org['sample_name']
+        field_errors = org['errors'].get('field_errors', {})
+        for field, errors in field_errors.items():
+            # Map field name to column name
+            # Handle complex field paths (e.g., health_status.0.text)
+            field_parts = field.split('.')
+
+            # Try exact match first
+            column_name = field_to_column.get(field, None)
+
+            # If no exact match, try to match the base field
+            if column_name is None and len(field_parts) > 1:
+                # Check if it's an array index pattern (e.g., health_status.0.text)
+                if len(field_parts) > 2 and field_parts[1].isdigit():
+                    # Try to match without the index (e.g., health_status.text)
+                    base_field = f"{field_parts[0]}.{field_parts[2]}"
+                    column_name = field_to_column.get(base_field, None)
+
+                # If still no match, try just the base field
+                if column_name is None:
+                    base_field = field_parts[0]
+                    column_name = field_to_column.get(base_field, field)
+
+            # If still no match, use the original field name
+            if column_name is None:
+                column_name = field
+
+            error_data.append({
+                'Sheet': sheet_name,  # Use the actual sheet name from the uploaded file
+                'Sample Name': sample_name,
+                'Column Name': column_name,
+                'Error': '; '.join(errors)
+            })
+
+    return error_data
+
+
 def generate_validation_report(validation_results: Dict[str, Any]) -> str:
     report = []
     report.append("FAANG Organism Validation Report")
