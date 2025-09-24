@@ -80,14 +80,18 @@ def build_json_data(headers: List[str], rows: List[List[str]]) -> List[Dict[str,
     """
     Build JSON structure from processed headers and rows.
     Only include 'Health Status' if it exists in the headers.
+    Always treat 'Child Of' as a list.
     """
     grouped_data = []
     has_health_status = any(h.startswith("Health Status") for h in headers)
+    has_child_of = any(h == "Child Of" for h in headers)
 
     for row in rows:
         record: Dict[str, Any] = {}
         if has_health_status:
             record["Health Status"] = []
+        if has_child_of:
+            record["Child Of"] = []
 
         i = 0
         while i < len(headers):
@@ -112,6 +116,13 @@ def build_json_data(headers: List[str], rows: List[List[str]]) -> List[Dict[str,
                             "term": ""
                         })
                     i += 1
+                continue
+
+            # ✅ Special handling for Child Of headers
+            elif has_child_of and col.startswith("Child Of"):
+                if val:  # Only append non-empty values
+                    record["Child Of"].append(val)
+                i += 1
                 continue
 
             # ✅ Normal processing for all other columns
