@@ -1,24 +1,23 @@
 import asyncio
+import hashlib
 import json
 import os
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Set, Optional
+from typing import Set, Optional, Dict
+from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Form, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from celery.result import AsyncResult
-from celery_app import celery_app
-from tasks import process_file
-
 
 class WSClient:
-    def __init__(self, ws: WebSocket):
+    def __init__(self, ws: WebSocket, client_id: str):
         self.ws = ws
-        self.queue: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
+        self.client_id = client_id
+        self.queue: asyncio.Queue[str] = asyncio.Queue(maxsize=5000)
         self.sender_task: asyncio.Task | None = None
 
     async def start(self):
@@ -59,48 +58,81 @@ class WSClient:
 class WSHub:
     def __init__(self):
         self.clients: Set[WSClient] = set()
+        self.by_id: Dict[str, WSClient] = {}
         self.lock = asyncio.Lock()
 
     async def register(self, client: WSClient):
         async with self.lock:
             self.clients.add(client)
+            self.by_id[client.client_id] = client
 
     async def unregister(self, client: WSClient):
         async with self.lock:
             self.clients.discard(client)
+            self.by_id.pop(client.client_id, None)
 
     async def broadcast(self, message: dict):
         async with self.lock:
-            tasks = [client.send_dict(message) for client in list(self.clients)]
+            tasks = [c.send_dict(message) for c in list(self.clients)]
         await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def send_to(self, client_id: str, message: dict):
+        async with self.lock:
+            client = self.by_id.get(client_id)
+        if client:
+            await client.send_dict(message)
 
-async def watch_task(hub: "WSHub", task_id: str, poll_interval: float = 0.5):
-    """
-    """
-    prev: Optional[tuple[str, str]] = None
-    while True:
-        r = AsyncResult(task_id, app=celery_app)
-        state, meta = r.state, (r.info or {})
-        cur = (state, json.dumps(meta, sort_keys=True, ensure_ascii=False))
-        if cur != prev:
-            if state == "PROGRESS":
-                await hub.broadcast({"type": "status", **(meta or {}), "task_id": task_id})
-            elif state == "SUCCESS":
-                await hub.broadcast({"type": "result", **(meta or {}), "task_id": task_id})
-            elif state in ("FAILURE", "REVOKED"):
-                await hub.broadcast({
-                    "type": "error",
-                    "task_id": task_id,
-                    "detail": getattr(r, "traceback", "") or (meta or {}).get("detail"),
-                })
+
+async def _compute_sha_and_lines(path: str) -> tuple[str, int]:
+    def _work():
+        sha, lines = hashlib.sha256(), 0
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                sha.update(chunk)
+                lines += chunk.count(b"\n")
+        return sha.hexdigest(), lines
+    return await asyncio.to_thread(_work)
+
+
+class FileProcessor:
+    def __init__(self, hub: WSHub):
+        self.hub = hub
+
+    async def process(self, path: str, filename: str, total: int, client_id: Optional[str]):
+        try:
+            send = (lambda m: self.hub.send_to(client_id, m)) if client_id else self.hub.broadcast
+
+            await send({"type": "status", "stage": 1, "msg": f"Preparing to parse: {filename}"})
+            await asyncio.sleep(1.0)
+
+            await send({"type": "status", "stage": 2, "msg": "Scanning file structure..."})
+            await asyncio.sleep(1.5)
+
+            await send({"type": "status", "stage": 3, "msg": "Computing checksum & stats..."})
+            sha_hex, lines = await _compute_sha_and_lines(path)
+
+            await send({"type": "status", "stage": 4, "msg": "Post-processing..."})
+            await asyncio.sleep(1.0)
+
+            await send({
+                "type": "result",
+                "filename": filename,
+                "size": total,
+                "lines_estimate": int(lines),
+                "sha256": sha_hex,
+            })
+
+            await send({"type": "status", "stage": 5, "msg": "Done"})
+        except Exception as e:
+            if client_id:
+                await self.hub.send_to(client_id, {"type": "error", "detail": str(e)})
             else:
-                await hub.broadcast({"type": "task", "task_id": task_id, "state": state, "meta": meta})
-            prev = cur
-
-        if state in ("SUCCESS", "FAILURE", "REVOKED"):
-            break
-        await asyncio.sleep(poll_interval)
+                await self.hub.broadcast({"type": "error", "detail": str(e)})
+        finally:
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
 
 
 app = FastAPI()
@@ -108,6 +140,7 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 hub = WSHub()
+processor = FileProcessor(hub)
 
 
 @app.get("/")
@@ -116,7 +149,11 @@ async def home():
 
 
 @app.post("/upload")
-async def upload(text: str = Form(...), filename: str = Form("input.txt")):
+async def upload(
+    text: str = Form(...),
+    filename: str = Form("input.txt"),
+    client_id: Optional[str] = Form(None),
+):
     fd, tmp = tempfile.mkstemp(prefix="txt_", suffix=f"_{filename}")
     os.close(fd)
 
@@ -125,18 +162,19 @@ async def upload(text: str = Form(...), filename: str = Form("input.txt")):
         f.write(data)
     size = len(data)
 
-    async_result = process_file.delay(tmp, filename, size)
-    task_id = async_result.id
+    if client_id:
+        await hub.send_to(client_id, {"type": "uploaded", "filename": filename, "size": size})
+    else:
+        await hub.broadcast({"type": "uploaded", "filename": filename, "size": size})
 
-    await hub.broadcast({"type": "uploaded", "filename": filename, "size": size, "task_id": task_id})
-    asyncio.create_task(watch_task(hub, task_id))
-
+    asyncio.create_task(processor.process(tmp, filename, size, client_id))
     return Response(status_code=202)
 
 
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    client = WSClient(ws)
+    client_id = ws.query_params.get("client_id") or uuid4().hex
+    client = WSClient(ws, client_id)
     await client.start()
     await hub.register(client)
     try:

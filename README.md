@@ -47,8 +47,6 @@ uvicorn websocket_client:app --host 127.0.0.1 --port 8000
 
 ---
 
-docker run --rm -p 6379:6379 redis:7
+python3 stress_test_upload.py --users 10 --concurrency 5 --payload-size 50000 --timeout 20
 
-celery -A celery_app.celery_app worker -l info
-
-uvicorn websocket_app:app --reload
+python3 stress_test_upload.py --users 200 --concurrency 50 --payload-size 200000 --timeout 60
