@@ -1,8 +1,6 @@
 import asyncio
 import hashlib
 import json
-import os
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Set, Optional, Dict
@@ -83,14 +81,11 @@ class WSHub:
             await client.send_dict(message)
 
 
-async def _compute_sha_and_lines(path: str) -> tuple[str, int]:
-    def _work():
-        sha, lines = hashlib.sha256(), 0
-        with open(path, "rb") as f:
-            for chunk in iter(lambda: f.read(1 << 20), b""):
-                sha.update(chunk)
-                lines += chunk.count(b"\n")
-        return sha.hexdigest(), lines
+async def _compute_sha_and_lines_bytes(data: bytes) -> tuple[str, int]:
+    def _work() -> tuple[str, int]:
+        sha = hashlib.sha256()
+        sha.update(data)
+        return sha.hexdigest(), data.count(b"\n")
     return await asyncio.to_thread(_work)
 
 
@@ -98,22 +93,17 @@ class FileProcessor:
     def __init__(self, hub: WSHub):
         self.hub = hub
 
-    async def process(self, path: str, filename: str, total: int, client_id: Optional[str]):
+    async def process_bytes(self, data: bytes, filename: str, total: int, client_id: Optional[str]):
         try:
             send = (lambda m: self.hub.send_to(client_id, m)) if client_id else self.hub.broadcast
-
             await send({"type": "status", "stage": 1, "msg": f"Preparing to parse: {filename}"})
             await asyncio.sleep(1.0)
-
             await send({"type": "status", "stage": 2, "msg": "Scanning file structure..."})
             await asyncio.sleep(1.5)
-
             await send({"type": "status", "stage": 3, "msg": "Computing checksum & stats..."})
-            sha_hex, lines = await _compute_sha_and_lines(path)
-
+            sha_hex, lines = await _compute_sha_and_lines_bytes(data)
             await send({"type": "status", "stage": 4, "msg": "Post-processing..."})
             await asyncio.sleep(1.0)
-
             await send({
                 "type": "result",
                 "filename": filename,
@@ -121,21 +111,16 @@ class FileProcessor:
                 "lines_estimate": int(lines),
                 "sha256": sha_hex,
             })
-
             await send({"type": "status", "stage": 5, "msg": "Done"})
         except Exception as e:
             if client_id:
                 await self.hub.send_to(client_id, {"type": "error", "detail": str(e)})
             else:
                 await self.hub.broadcast({"type": "error", "detail": str(e)})
-        finally:
-            try:
-                os.remove(path)
-            except FileNotFoundError:
-                pass
 
 
 app = FastAPI()
+
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -154,20 +139,13 @@ async def upload(
     filename: str = Form("input.txt"),
     client_id: Optional[str] = Form(None),
 ):
-    fd, tmp = tempfile.mkstemp(prefix="txt_", suffix=f"_{filename}")
-    os.close(fd)
-
     data = text.encode("utf-8")
-    with open(tmp, "wb") as f:
-        f.write(data)
     size = len(data)
-
     if client_id:
         await hub.send_to(client_id, {"type": "uploaded", "filename": filename, "size": size})
     else:
         await hub.broadcast({"type": "uploaded", "filename": filename, "size": size})
-
-    asyncio.create_task(processor.process(tmp, filename, size, client_id))
+    asyncio.create_task(processor.process_bytes(data, filename, size, client_id))
     return Response(status_code=202)
 
 

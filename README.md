@@ -43,7 +43,7 @@ The application is organized as follows:
 
 python3 -m pip install -r requirements.txt
 
-uvicorn websocket_client:app --host 127.0.0.1 --port 8000
+uvicorn websocket_app:app --host 127.0.0.1 --port 8000
 
 ---
 

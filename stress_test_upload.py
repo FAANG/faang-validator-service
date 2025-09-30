@@ -23,7 +23,9 @@ async def one_user(user_id: int, http_url: str, ws_url: str, payload_size: int, 
     client_id = f"cid-{user_id}-{uuid.uuid4().hex[:8]}"
     filename = f"input_{user_id}_{uuid.uuid4().hex[:8]}.txt"
     text = make_text(user_id, payload_size)
+
     expected_sha = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    expected_lines = text.count("\n")
 
     msg_queue: asyncio.Queue[str] = asyncio.Queue()
 
@@ -75,7 +77,11 @@ async def one_user(user_id: int, http_url: str, ws_url: str, payload_size: int, 
                 return {"ok": False, "ack_ms": ack_ms, "e2e_ms": None, "error": f"ws error: {msg.get('detail')}"}
 
             if msg.get("type") == "result":
-                if msg.get("filename") == filename and msg.get("sha256") == expected_sha:
+                if (
+                    msg.get("filename") == filename
+                    and msg.get("sha256") == expected_sha
+                    and int(msg.get("lines_estimate", -1)) == expected_lines
+                ):
                     e2e_ms = (time.perf_counter() - t0) * 1000.0
                     return {"ok": True, "ack_ms": ack_ms, "e2e_ms": e2e_ms, "error": None}
 
