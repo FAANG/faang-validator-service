@@ -1,5 +1,4 @@
 import asyncio
-import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +8,11 @@ from uuid import uuid4
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Form, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+
+import sys, os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+from src.organism_validation import PydanticValidator, process_validation_errors
+from src.file_processor import parse_contents
 
 
 class WSClient:
@@ -81,42 +85,70 @@ class WSHub:
             await client.send_dict(message)
 
 
-async def _compute_sha_and_lines_bytes(data: bytes) -> tuple[str, int]:
-    def _work() -> tuple[str, int]:
-        sha = hashlib.sha256()
-        sha.update(data)
-        return sha.hexdigest(), data.count(b"\n")
-    return await asyncio.to_thread(_work)
-
-
 class FileProcessor:
     def __init__(self, hub: WSHub):
         self.hub = hub
 
-    async def process_bytes(self, data: bytes, filename: str, total: int, client_id: Optional[str]):
+    async def process_dataurl(self, contents_data_url: str, filename: str, client_id: Optional[str]):
+        send = (lambda m: self.hub.send_to(client_id, m)) if client_id else self.hub.broadcast
         try:
-            send = (lambda m: self.hub.send_to(client_id, m)) if client_id else self.hub.broadcast
-            await send({"type": "status", "stage": 1, "msg": f"Preparing to parse: {filename}"})
-            await asyncio.sleep(1.0)
-            await send({"type": "status", "stage": 2, "msg": "Scanning file structure..."})
-            await asyncio.sleep(1.5)
-            await send({"type": "status", "stage": 3, "msg": "Computing checksum & stats..."})
-            sha_hex, lines = await _compute_sha_and_lines_bytes(data)
-            await send({"type": "status", "stage": 4, "msg": "Post-processing..."})
-            await asyncio.sleep(1.0)
-            await send({
-                "type": "result",
-                "filename": filename,
-                "size": total,
-                "lines_estimate": int(lines),
-                "sha256": sha_hex,
-            })
-            await send({"type": "status", "stage": 5, "msg": "Done"})
+            await send({"type": "status", "stage": 1, "msg": f"Parsing {filename}..."})
+            records, sheet_name, error_message = parse_contents(contents_data_url, filename)
+            if error_message:
+                await send({"type": "error", "detail": error_message})
+                await asyncio.sleep(0.1)
+                await send({"type": "done", "ok": False})
+                return
+
+            await send({"type": "status", "stage": 2, "msg": "Validating..."})
+            validator = PydanticValidator()
+            validation_results = await asyncio.to_thread(validator.validate_with_pydantic, records)
+
+            valid_organisms = validation_results.get('valid_organisms', []) or []
+            invalid_organisms = validation_results.get('invalid_organisms', []) or []
+
+            error_data = []
+            if invalid_organisms:
+                await send({"type": "status", "stage": 3, "msg": "Aggregating errors..."})
+                error_data = process_validation_errors(invalid_organisms, sheet_name) or []
+
+            cols = list(records[0].keys()) if records else []
+            preview = []
+            for r in records[:50]:
+                row = {}
+                for k, v in r.items():
+                    if isinstance(v, (str, int, float, bool)) or v is None:
+                        row[k] = v
+                    else:
+                        row[k] = json.dumps(v, ensure_ascii=False, default=str)
+                preview.append(row)
+
+            await send({"type": "status", "stage": 4, "msg": "Sending result..."})
+
+            try:
+                await send({
+                    "type": "result",
+                    "filename": filename,
+                    "valid_count": len(valid_organisms),
+                    "invalid_count": len(invalid_organisms),
+                    "error_table": error_data,
+                    "columns": cols,
+                    "data_preview": preview,
+                })
+            except Exception as e:
+                await send({"type": "error", "detail": f"send(result) failed: {type(e).__name__}: {e}"})
+                await asyncio.sleep(0.1)
+                await send({"type": "done", "ok": False})
+                return
+
+            await asyncio.sleep(0.25)
+
+            await send({"type": "done", "ok": True})
+
         except Exception as e:
-            if client_id:
-                await self.hub.send_to(client_id, {"type": "error", "detail": str(e)})
-            else:
-                await self.hub.broadcast({"type": "error", "detail": str(e)})
+            await send({"type": "error", "detail": f"{type(e).__name__}: {e}"})
+            await asyncio.sleep(0.1)
+            await send({"type": "done", "ok": False})
 
 
 app = FastAPI()
@@ -135,17 +167,15 @@ async def home():
 
 @app.post("/upload")
 async def upload(
-    text: str = Form(...),
-    filename: str = Form("input.txt"),
+    contents: str = Form(...),
+    filename: str = Form("input.xlsx"),
     client_id: Optional[str] = Form(None),
 ):
-    data = text.encode("utf-8")
-    size = len(data)
     if client_id:
-        await hub.send_to(client_id, {"type": "uploaded", "filename": filename, "size": size})
+        await hub.send_to(client_id, {"type": "uploaded", "filename": filename})
     else:
-        await hub.broadcast({"type": "uploaded", "filename": filename, "size": size})
-    asyncio.create_task(processor.process_bytes(data, filename, size, client_id))
+        await hub.broadcast({"type": "uploaded", "filename": filename})
+    asyncio.create_task(processor.process_dataurl(contents, filename, client_id))
     return Response(status_code=202)
 
 
