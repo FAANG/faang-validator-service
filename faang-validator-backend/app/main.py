@@ -8,8 +8,8 @@ from typing import List, Dict, Any, Optional
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from app.organism_validation import PydanticValidator, generate_validation_report, process_validation_errors
-from app.file_processor import parse_contents_api
+from organism_validation import PydanticValidator, generate_validation_report, process_validation_errors
+from file_processor import parse_contents_api
 
 app = FastAPI(title="FAANG Validator API", description="API for validating FAANG data")
 
@@ -79,6 +79,3 @@ async def validate_file(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)

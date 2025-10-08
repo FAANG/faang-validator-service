@@ -13,7 +13,7 @@ from dash.exceptions import PreventUpdate
 import uuid
 
 # Backend API URL - can be configured via environment variable
-BACKEND_API_URL = os.environ.get('BACKEND_API_URL', 'http://localhost:8000')
+BACKEND_API_URL = os.environ.get('BACKEND_API_URL', 'https://faang-validator-backend-service-964531885708.europe-west2.run.app/api')
 
 # Initialize the Dash app
 # Set suppress_callback_exceptions=True to allow callbacks for components that are created dynamically
