@@ -8,8 +8,8 @@ from typing import List, Dict, Any, Optional
 # Add the project root to the Python path
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from src.organism_validation import PydanticValidator, generate_validation_report, process_validation_errors
-from src.file_processor import parse_contents_api
+from app.organism_validation import PydanticValidator, generate_validation_report, process_validation_errors
+from app.file_processor import parse_contents_api
 
 app = FastAPI(title="FAANG Validator API", description="API for validating FAANG data")
 

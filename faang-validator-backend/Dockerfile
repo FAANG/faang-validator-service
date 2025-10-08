@@ -1,21 +1,17 @@
-# Use Python 3.10 as the base image
-FROM python:3.10.12
+#
+FROM python:3.10
 
-# Set working directory
-WORKDIR /app
+#
+WORKDIR /code
 
-# Copy requirements file
-COPY requirements.txt .
+#
+COPY ./requirements.txt /code/requirements.txt
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+#
+RUN pip install --no-cache-dir --upgrade -r /code/requirements.txt
 
-# Copy the entire project
-COPY . .
+#
+COPY ./app /code/app
 
-# Set environment variables
-ENV PORT=8000
-ENV ENVIRONMENT=production
-
-# Command to run the application
-CMD uvicorn main:app --host 0.0.0.0 --port $PORT
+#
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80" , "--root-path", "/api/"]
