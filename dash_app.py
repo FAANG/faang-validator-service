@@ -31,6 +31,8 @@ app.layout = html.Div([
         dcc.Store(id='client-id'),
         dcc.Store(id='stored-error-data'),
 
+        dcc.Store(id='loading-flag', data=False),
+
         WebSocket(id='ws', url=''),
 
         html.Div(
@@ -101,10 +103,18 @@ app.layout = html.Div([
                 dcc.Loading(
                     id="loading-validation",
                     type="circle",
+                    color="#4CAF50",
                     children=html.Div(id='output-data-upload')
                 ),
 
+                html.Div(
+                    id='inline-spinner',
+                    className='inline-spinner',
+                    style={'display': 'none'}
+                ),
+
                 html.Div(id='status-lines', style={'margin': '10px 0', 'color': '#333'}),
+
                 html.Div(id='summary-buttons'),
                 html.Div(id='error-table-container', style={'display': 'none'}),
                 html.Div(id='excel-table-container'),
@@ -159,6 +169,7 @@ def ensure_client_id(n, cid):
 
 @app.callback(
     Output('output-data-upload', 'children'),
+    Output('loading-flag', 'data'),
     Input('validate-button', 'n_clicks'),
     State('stored-file-data', 'data'),
     State('stored-filename', 'data'),
@@ -183,9 +194,9 @@ def validate_data_via_ws(n_clicks, contents, filename, client_id):
         return html.Div([
             html.H5(filename or "file"),
             html.P(f"Failed to start validation: {e}", style={'color': 'red'})
-        ])
+        ]), False
 
-    return html.Div([html.Div("Started… waiting for server updates.")])
+    return html.Div(), True
 
 
 @app.callback(
@@ -193,6 +204,7 @@ def validate_data_via_ws(n_clicks, contents, filename, client_id):
     Output('summary-buttons', 'children'),
     Output('stored-error-data', 'data'),
     Output('excel-table-container', 'children'),
+    Output('loading-flag', 'data', allow_duplicate=True),
     Input('ws', 'message'),
     State('status-lines', 'children'),
     prevent_initial_call=True
@@ -205,17 +217,17 @@ def on_ws_message(message, existing_status):
     except Exception:
         raise PreventUpdate
 
-    typ = payload.get("type")
-    status_children = existing_status or []
+    msg_type = payload.get("type")
 
-    if typ == "status":
-        return status_children + [html.Div(payload.get("msg", ""))], no_update, no_update, no_update
+    if msg_type == "status":
+        return no_update, no_update, no_update, no_update, True
 
-    if typ == "error":
-        return (status_children + [html.Div(f"ERROR: {payload.get('detail','')}", style={'color': 'red'})],
-                no_update, no_update, no_update)
+    if msg_type == "error":
+        detail = payload.get("detail", "")
+        children = (existing_status or []) + [html.Div(f"ERROR: {detail}", style={'color': 'red'})]
+        return children, no_update, no_update, no_update, False
 
-    if typ == "result":
+    if msg_type == "result":
         valid = payload.get("valid_count", 0)
         invalid = payload.get("invalid_count", 0)
         err = payload.get("error_table", [])
@@ -246,14 +258,21 @@ def on_ws_message(message, existing_status):
             )
         ], style={'margin': '20px 0'})
 
-        return status_children, summary, err, excel_children
+        return no_update, summary, err, excel_children, False
 
-    if typ == "done":
-        ok = payload.get("ok", False)
-        return (status_children + [html.Div("Completed." if ok else "Failed.", style={'fontWeight': 'bold'})],
-                no_update, no_update, no_update)
+    if msg_type == "done":
+        return no_update, no_update, no_update, no_update, False
 
     raise PreventUpdate
+
+
+@app.callback(
+    Output('inline-spinner', 'style'),
+    Input('loading-flag', 'data')
+)
+def toggle_inline_spinner(is_loading):
+    return {'display': 'block' if is_loading else 'none',
+            'textAlign': 'center', 'padding': '20px'}
 
 
 @app.callback(

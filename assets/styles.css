@@ -197,3 +197,29 @@ label {
     text-decoration: none;
     background-color: #ffeeee;
 }
+
+.inline-spinner {
+  display: none;
+}
+
+.inline-spinner::before {
+  content: "";
+  display: inline-block;
+  width: 56px;
+  height: 56px;
+  border: 6px solid #ddd;
+  border-top-color: #4CAF50;
+  border-radius: 50%;
+  animation: faang-inline-spin 0.9s linear infinite;
+}
+
+@keyframes faang-inline-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inline-spinner::before {
+    animation: none;
+    border-top-color: #888;
+  }
+}
