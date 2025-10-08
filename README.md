@@ -38,3 +38,13 @@ The application is organized as follows:
 ## Dependencies
 
 - Setuptools is pinned to a version less than 81 to avoid issues with the deprecated pkg_resources package, which is scheduled for removal in November 2025.
+
+# Tests
+
+python3 -m pip install -r requirements.txt
+
+uvicorn websocket_app:app --host 127.0.0.1 --port 8000
+
+python3 stress_test_upload.py --users 10 --concurrency 5 --payload-size 50000 --timeout 20
+
+python3 stress_test_upload.py --users 200 --concurrency 50 --payload-size 200000 --timeout 60
